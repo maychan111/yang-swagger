@@ -1,6 +1,7 @@
 # OPENAPI (swagger) specification feature
 
 debug = require('debug')('yang-swagger') if process.env.DEBUG?
+patch = false
 traverse = require 'traverse'
 Yang = require 'yang-js'
 yaml = require 'js-yaml'
@@ -107,139 +108,154 @@ yang2jschema = (schema, item=false) ->
     else yang2jsobj schema
 
 discoverOperations = (schema, item=false) ->
+  config = schema.config?.tag != false
+  console.log("[discoverOperations] inspecting #{schema.uri}", "config is #{config}")
   debug? "[discoverOperations] inspecting #{schema.uri}"
   origin = schema.root.tag
   deprecated = schema.status?.valueOf() is 'deprecated'
+  returnValue = []
+
   switch 
-    when schema.kind in [ 'rpc', 'action' ] then [
-      method: 'post'
-      tags: [ origin ]
-      description: schema.description?.tag
-      summary: "Invokes #{schema.tag} in #{schema.parent.tag}"
-      deprecated: deprecated
-      parameter: [
-        name: "#{schema.tag}:input"
-        in: 'body'
-        description: schema.input?.description?.tag
-        schema: yang2jschema schema.input
-      ]
-      response: [
-        code: 200
-        description: "Expected response of #{schema.tag}"
-        schema: yang2jschema schema.output
-      ]
-    ]
-    when schema.kind is 'list' and not item then [
-      method: 'post'
-      tags: [ origin ]
-      description: schema.description?.tag
-      summary: "Creates one or more new #{schema.tag} in #{schema.parent.tag}"
-      deprecated: deprecated
-      parameter: [
-        name: "#{schema.tag}"
-        in: 'body'
-        description: schema.description?.tag
-        schema: yang2jschema schema
-      ]
-      response: [
-        code: 200
-        description: "Expected response for creating #{schema.tag}(s) in collection"
-        schema: yang2jschema schema
-      ]
-     ,
-      method: 'get'
-      tags: [ origin ]
-      summary: "List all #{schema.tag}s from #{schema.parent.tag}"
-      deprecated: deprecated
-      response: [
-        code: 200
-        description: "Expected response of #{schema.tag}s"
-        schema: yang2jschema schema
-      ]
-     ,
-      method: 'put'
-      tags: [ origin ]
-      summary: "Replace the entire #{schema.tag} collection"
-      deprecated: deprecated
-      parameter: [
-        name: "#{schema.tag}"
-        in: 'body'
-        description: schema.description?.tag
-        schema: yang2jschema schema
-      ]
-      response: [
-        code: 201
-        description: "Expected response for replacing collection"
-      ]
-     ,
-      method: 'patch'
-      tags: [ origin ]
-      summary: "Merge items into the #{schema.tag} collection"
-      deprecated: deprecated
-      parameter: [
-        name: "#{schema.tag}"
-        in: 'body'
-        description: schema.description?.tag
-        schema: yang2jschema schema
-      ]
-      response: [
-        code: 201
-        description: "Expected response for merging into collection"
-      ]
-    ]
-    else [
-      method: 'get'
-      tags: [ origin ]
-      description: schema.description?.tag
-      summary: "View detail on #{schema.tag}"
-      deprecated: deprecated
-      response: [
-        code: 200
-        description: "Expected response of #{schema.tag}"
-        schema: yang2jschema schema, item
-      ]
-     ,
-      method: 'put'
-      tags: [ origin ]
-      summary: "Update details on #{schema.tag}"
-      deprecated: deprecated
-      parameter: [
-        name: "#{schema.tag}"
-        in: 'body'
-        description: schema.description?.tag
-        schema: yang2jschema schema, item
-      ]
-      response: [
-        code: 200
-        description: "Expected response of #{schema.tag}"
-        schema: yang2jschema schema, item
-      ]
-     ,
-      method: 'patch'
-      tags: [ origin ]
-      summary: "Merge details on #{schema.tag}"
-      deprecated: deprecated
-      parameter: [
-        name: "#{schema.tag}"
-        in: 'body'
-        description: schema.description?.tag
-        schema: yang2jschema schema, item
-      ]
-      response: [
-        code: 200
-        description: "Expected response of #{schema.tag}"
-        schema: yang2jschema schema, item
-      ]
-     ,
-      method: 'delete'
-      tags: [ origin ]
-      summary: "Delete #{schema.tag} from #{schema.parent.tag}"
-      deprecated: deprecated
-      response: [
-        code: 204
-        description: "Expected response for delete"
-      ]
-    ]
+    when schema.kind in [ 'rpc', 'action' ]
+      return {
+        method: 'post',
+        tags: [ origin ],
+        description: schema.description?.tag,
+        summary: "Invokes #{schema.tag} in #{schema.parent.tag}",
+        deprecated: deprecated,
+        parameter: {
+          name: "#{schema.tag}:input",
+          in: 'body',
+          description: schema.input?.description?.tag,
+          schema: yang2jschema schema.input,
+        },
+        response: {
+          code: 200,
+          description: "Expected response of #{schema.tag}",
+          schema: yang2jschema schema.output,
+        }
+      }
+    when schema.kind is 'list' and not item
+      returnValue.push {
+        method: 'post',
+        tags: [ origin ],
+        description: schema.description?.tag,
+        summary: "Creates one or more new #{schema.tag} in #{schema.parent.tag}",
+        deprecated: deprecated,
+        parameter: {
+          name: "#{schema.tag}",
+          in: 'body',
+          description: schema.description?.tag,
+          schema: yang2jschema schema,
+        }
+        response: {
+          code: 200,
+          description: "Expected response for creating #{schema.tag}(s) in collection",
+          schema: yang2jschema schema,
+        }
+      }
+      returnValue.push {
+        method: 'get',
+        tags: [ origin ],
+        summary: "List all #{schema.tag}s from #{schema.parent.tag}",
+        deprecated: deprecated,
+        response: {
+          code: 200,
+          description: "Expected response of #{schema.tag}s",
+          schema: yang2jschema schema,
+        }
+      }
+      returnValue.push {
+        method: 'put',
+        tags: [ origin ],
+        summary: "Replace the entire #{schema.tag} collection",
+        deprecated: deprecated,
+        parameter: {
+          name: "#{schema.tag}",
+          in: 'body',
+          description: schema.description?.tag,
+          schema: yang2jschema schema,
+        }
+        response: {
+          code: 201,
+          description: "Expected response for replacing collection",
+        }
+      },
+      returnValue.push {
+        method: 'patch',
+        tags: [ origin ],
+        summary: "Merge items into the #{schema.tag} collection",
+        deprecated: deprecated,
+        parameter: {
+          name: "#{schema.tag}",
+          in: 'body',
+          description: schema.description?.tag,
+          schema: yang2jschema schema,
+        }
+        response: {
+          code: 201,
+          description: "Expected response for merging into collection",
+        }
+      }
+      return returnValue
+    else 
+      returnValue.push {
+        method: 'get',
+        tags: [ origin ],
+        description: schema.description?.tag,
+        summary: "View detail on #{schema.tag}",
+        deprecated: deprecated,
+        response: {
+          code: 200,
+          description: "Expected response of #{schema.tag}",
+          schema: yang2jschema schema, item,
+        }
+      }
+      if config then returnValue.push {
+        method: 'put',
+        tags: [ origin ],
+        summary: "Update details on #{schema.tag}",
+        deprecated: deprecated,
+        parameter: {
+          name: "#{schema.tag}",
+          in: 'body',
+          description: schema.description?.tag,
+          schema: yang2jschema schema, item,
+        }
+        response: {
+          code: 200,
+          description: "Expected response of #{schema.tag}",
+          schema: yang2jschema schema, item,
+        }
+      }
+      if config and patch then returnValue.push {
+        method: 'patch',
+        tags: [ origin ],
+        summary: "Merge details on #{schema.tag}",
+        deprecated: deprecated,
+        parameter: {
+          name: "#{schema.tag}",
+          in: 'body',
+          description: schema.description?.tag,
+          schema: yang2jschema schema, item,
+        }
+        response: {
+          code: 200,
+          description: "Expected response of #{schema.tag}",
+          schema: yang2jschema schema, item,
+        }
+      }
+      if config then returnValue.push {
+        method: 'delete',
+        tags: [ origin ]
+        summary: "Delete #{schema.tag} from #{schema.parent.tag}",
+        deprecated: deprecated,
+        response: {
+          code: 204,
+          description: "Expected response for delete",
+        }
+      }
+      return returnValue
 
 discoverPathParameter = (schema) ->
   debug? "[discoverPathParameter] inspecting #{schema.uri}"
